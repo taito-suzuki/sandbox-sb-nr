@@ -314,6 +314,8 @@ suspend fun job703(wait: Long, token: Token) {
 suspend fun job70301(token: Token) = coroutineScope {
     token.link()
     val segment = NewRelic.getAgent().transaction.startSegment("job70301 segment")
+    Thread.sleep(1000L)
     delay(100L)
+    Thread.sleep(1000L)
     segment.end()
 }
