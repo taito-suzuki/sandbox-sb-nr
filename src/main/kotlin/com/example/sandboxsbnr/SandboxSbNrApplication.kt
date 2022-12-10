@@ -11,6 +11,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.logging.Logger
 import kotlin.coroutines.ContinuationInterceptor
+import kotlin.coroutines.CoroutineContext
 
 @SpringBootApplication
 class SandboxSbNrApplication
@@ -25,6 +26,24 @@ class HelloController(
     val threadPoolForP009: ExecutorService = Executors.newFixedThreadPool(2),
     val threadPoolForKP00902: ExecutorService = Executors.newFixedThreadPool(2),
 ) {
+    @GetMapping("hoge1000")
+    fun getHoge1000(): String {
+        Thread.sleep(1000L)
+        return "hello"
+    }
+
+    @GetMapping("hoge650")
+    fun getHoge650(): String {
+        Thread.sleep(650L)
+        return "hello"
+    }
+
+    @GetMapping("hoge400")
+    fun getHoge400(): String {
+        Thread.sleep(400L)
+        return "hello"
+    }
+
     @GetMapping("kp00901")
     @Trace(dispatcher = true)
     fun getKP00901(): String {
@@ -156,7 +175,6 @@ class HelloController(
                 async { job3(1000L, tokenCreatedInThreadA) },
                 async { job3(1000L, tokenCreatedInThreadA) },
                 async { job3(1000L, tokenCreatedInThreadA) },
-                async { job7(1000L, tokenCreatedInThreadA) },
             )
             jobs.awaitAll()
         }
@@ -167,39 +185,108 @@ class HelloController(
     @GetMapping("kp010")
     @Trace(dispatcher = true)
     fun getKP010(): String {
-        val token = NewRelic.getAgent().transaction.token
-        // Thread.sleepではなくdelay関数にするとダメ。
-        // delay関数で中断している間の時間がNewRelic上では計上されない。
-        // これはある意味仕方ないと言えるのかもしれない。
-
-        // delay関数の中でtoken.linkをコールすれば良いんだと思われるが、
-        // それはできない。
-        // こういった中断をどう計上するかが課題だ。
-        runBlocking(threadPoolForP009.asCoroutineDispatcher()) {
+        val transInThreadA = NewRelic.getAgent().transaction
+        val tokenCreatedInThreadA = transInThreadA.token
+        runBlocking(threadPoolForKP00902.asCoroutineDispatcher() + NewRelicContextElement(tokenCreatedInThreadA)) {
             val jobs = listOf(
-                async { job4(1000L, token) },
-                async { job4(2000L, token) },
-                async { job4(1000L, token) },
+                async { job1(1000L) },
             )
             jobs.awaitAll()
         }
-        token.expire()
+        tokenCreatedInThreadA.expire()
         return "hello"
     }
 
     @GetMapping("kp011")
     @Trace(dispatcher = true)
     fun getKP011(): String {
-        val token = NewRelic.getAgent().transaction.token
-        // segmentを使うことで、任意の処理単位をSegmentとしてトレースできるようになる。
-        val segment = NewRelic.getAgent().transaction.startSegment("hoge")
-        job6(1000L)
-        runBlocking(threadPoolForP009.asCoroutineDispatcher()) {
-            job5(1000L, token, segment)
+        Thread.currentThread().name = "ThreadA"
+        logger.info("Running getKP011 in ${Thread.currentThread().name}")
+        val transInThreadA = NewRelic.getAgent().transaction
+        logger.info("Started transaction is ${transInThreadA.hashCode()}")
+        // スレッドプール上で実行される非同期処理をトレースするために
+        // トークンを生成する。
+        val tokenCreatedInThreadA = transInThreadA.token
+        runBlocking(threadPoolForKP00902.asCoroutineDispatcher() + NewRelicTokenContext(tokenCreatedInThreadA)) {
+            logger.info("Running runBlocking's block in ${Thread.currentThread().name}")
+            val jobs = listOf(
+                async { job9(1000L) },
+            )
+            jobs.awaitAll()
         }
-        token.expire()
+        tokenCreatedInThreadA.expire()
         return "hello"
     }
+
+    @GetMapping("kp012")
+    @Trace(dispatcher = true)
+    fun getKP012(): String {
+        val transInThreadA = NewRelic.getAgent().transaction
+        val tokenCreatedInThreadA = transInThreadA.token
+        runBlocking(threadPoolForKP00902.asCoroutineDispatcher() + NewRelicTokenContext(tokenCreatedInThreadA)) {
+            val jobs = listOf(
+                async { job10() },
+                async { job11() },
+            )
+            jobs.awaitAll()
+        }
+        tokenCreatedInThreadA.expire()
+        return "hello"
+    }
+
+    @GetMapping("kp013")
+    @Trace(dispatcher = true)
+    fun getKP013(): String {
+        val transInThreadA = NewRelic.getAgent().transaction
+        val tokenCreatedInThreadA = transInThreadA.token
+        runBlocking(threadPoolForKP00902.asCoroutineDispatcher() + NewRelicTokenContext(tokenCreatedInThreadA)) {
+            val jobs = listOf(
+                async { job13() },
+            )
+            jobs.awaitAll()
+        }
+        tokenCreatedInThreadA.expire()
+        return "hello"
+    }
+
+    @GetMapping("kp014")
+    @Trace(dispatcher = true)
+    fun getKP014(): String {
+        val transInThreadA = NewRelic.getAgent().transaction
+        val tokenCreatedInThreadA = transInThreadA.token
+        runBlocking(threadPoolForKP00902.asCoroutineDispatcher() + NewRelicTokenContext(tokenCreatedInThreadA)) {
+            val job = asyncw { job1(2000L) }
+            job.await()
+            val jobs = listOf(
+                asyncw { job1(1000L) },
+                asyncw { job1(1000L) },
+                asyncw { job1(1000L) },
+            )
+            jobs.awaitAll()
+        }
+        tokenCreatedInThreadA.expire()
+        return "hello"
+    }
+
+    @GetMapping("kp015")
+    @Trace(dispatcher = true)
+    fun getKP015(): String {
+        val transInThreadA = NewRelic.getAgent().transaction
+        val tokenCreatedInThreadA = transInThreadA.token
+        runBlocking(threadPoolForKP00902.asCoroutineDispatcher() + NewRelicTokenContext(tokenCreatedInThreadA)) {
+            val job = async { job14(2000L) }
+            job.await()
+            val jobs = listOf(
+                async { job14(1000L) },
+                async { job14(1000L) },
+                async { job14(1000L) },
+            )
+            jobs.awaitAll()
+        }
+        tokenCreatedInThreadA.expire()
+        return "hello"
+    }
+
 }
 
 @Trace(async = true)
@@ -209,46 +296,16 @@ suspend fun job1(wait: Long) {
 }
 
 @Trace(async = true)
-fun job3(wait: Long, token: Token) {
+suspend fun job3(wait: Long, token: Token) {
     // 関数の最初でtoken.linkを実行！
     token.link()
     try {
-        Thread.sleep(wait)
+        delay(wait)
     } finally {
         // token.linkは関数の最後でも良い
         // しかし、後述する理由により、関数の最初で実行した方が良い。
         // token.link()
     }
-}
-
-
-@Trace(async = true)
-suspend fun job4(wait: Long, token: Token) {
-    try {
-        delay(wait) // NewRelic上では計上されない中断（delayの中の処理まではlinkできない）
-    } finally {
-        token.link()
-    }
-}
-
-
-@Trace(async = true)
-suspend fun job5(wait: Long, token: Token, segment: Segment) {
-    token.link()
-    val segment2 = NewRelic.getAgent().transaction.startSegment("foo")
-    try {
-        delay(wait)
-    } finally {
-        segment.endAsync()
-        segment2.endAsync()
-    }
-}
-
-@Trace
-fun job6(wait: Long) {
-    val segment = NewRelic.getAgent().transaction.startSegment("seg job6")
-    Thread.sleep(wait)
-    segment.end()
 }
 
 
@@ -318,4 +375,190 @@ suspend fun job70301(token: Token) = coroutineScope {
     delay(100L)
     Thread.sleep(1000L)
     segment.end()
+}
+
+@Trace(async = true)
+suspend fun job8(wait: Long) = coroutineScope {
+    val segment = NewRelic.getAgent().transaction.startSegment("job7 segment")
+    delay(wait)
+    segment.end()
+    val children = listOf(
+        async { job801(1000L) },
+        async { job802(1000L) },
+        async { job803(1000L) },
+    )
+    children.awaitAll()
+}
+
+@Trace(async = true)
+suspend fun job801(wait: Long) {
+    val segment = NewRelic.getAgent().transaction.startSegment("job701 segment")
+    delay(wait)
+    segment.end()
+}
+
+
+@Trace(async = true)
+suspend fun job802(wait: Long) = coroutineScope {
+    val segment = NewRelic.getAgent().transaction.startSegment("job802 segment")
+    segment.reportAsExternal(
+        HttpParameters
+            .library("dummy http client")
+            .uri(URI.create("https://www.example.com/hoge/fuga"))
+            .procedure("foo")
+            .noInboundHeaders()
+            .build()
+    )
+    delay(wait)
+    segment.end()
+}
+
+@Trace(async = true)
+suspend fun job803(wait: Long) {
+    val segment = NewRelic.getAgent().transaction.startSegment("job703 segment")
+    coroutineScope {
+        val deferredA = async {
+            delay(wait)
+        }
+        val deferredB = async { job80301() }
+        deferredA.await()
+        deferredB.await()
+        segment.end()
+    }
+}
+
+
+@Trace(async = true)
+suspend fun job80301() = coroutineScope {
+    val segment = NewRelic.getAgent().transaction.startSegment("job70301 segment")
+    Thread.sleep(1000L)
+    delay(100L)
+    Thread.sleep(1000L)
+    segment.end()
+}
+
+
+@Trace(async = true)
+suspend fun job9(wait: Long) = coroutineScope {
+    val segment = NewRelic.getAgent().transaction.startSegment("job9 segment")
+    delay(wait)
+    segment.end()
+    val children = listOf(
+        async { job901(1000L) },
+        async { job902(1000L) },
+        async { job903(1000L) },
+    )
+    children.awaitAll()
+}
+
+@Trace(async = true)
+suspend fun job901(wait: Long) = coroutineScope {
+    coroutineContext[NewRelicTokenContext]?.token?.link()
+    val segment = NewRelic.getAgent().transaction.startSegment("job901 segment")
+    delay(wait)
+    segment.end()
+}
+
+
+@Trace(async = true)
+suspend fun job902(wait: Long) = coroutineScope {
+    coroutineContext[NewRelicTokenContext]?.token?.link()
+    val segment = NewRelic.getAgent().transaction.startSegment("job902 segment")
+    segment.reportAsExternal(
+        HttpParameters
+            .library("dummy http client")
+            .uri(URI.create("https://www.example.com/hoge/fuga"))
+            .procedure("foo")
+            .noInboundHeaders()
+            .build()
+    )
+    delay(wait)
+    segment.end()
+}
+
+@Trace(async = true)
+suspend fun job903(wait: Long) = coroutineScope {
+    coroutineContext[NewRelicTokenContext]?.token?.link()
+    val segment = NewRelic.getAgent().transaction.startSegment("job903 segment")
+    coroutineScope {
+        val deferredA = async {
+            delay(wait)
+        }
+        val deferredB = async { job90301() }
+        deferredA.await()
+        deferredB.await()
+        segment.end()
+    }
+}
+
+
+@Trace(async = true)
+suspend fun job90301() = coroutineScope {
+    coroutineContext[NewRelicTokenContext]?.token?.link()
+    val segment = NewRelic.getAgent().transaction.startSegment("job90301 segment")
+    Thread.sleep(1000L)
+    delay(100L)
+    Thread.sleep(1000L)
+    segment.end()
+}
+
+
+@Trace(async = true)
+suspend fun job10() = coroutineScope {
+    coroutineContext[NewRelicTokenContext]?.token?.link()
+}
+
+
+suspend fun job11() = coroutineScope {
+    job12()
+}
+
+@Trace(async = true)
+suspend fun job12() = coroutineScope {
+    coroutineContext[NewRelicTokenContext]?.token?.link()
+}
+
+@Trace(async = true)
+suspend fun job13() = coroutineScope {
+    coroutineContext[NewRelicTokenContext]?.token?.link()
+    val segment = NewRelic.getAgent().transaction.startSegment("hoge")
+    delay(2000L)
+    segment.end()
+}
+
+
+@Trace(async = true)
+suspend fun job14(wait: Long) = coroutineScope {
+    coroutineContext[NewRelicTokenContext]?.token?.link()
+    val segment = nrSegment()
+    delay(wait)
+    segment.end()
+}
+
+class NewRelicContextElement(
+    private val token: Token
+) : ThreadContextElement<Token> {
+
+    override val key = Key
+
+    @Suppress("EmptyFunctionBlock")
+    override fun restoreThreadContext(context: CoroutineContext, oldState: Token) {
+    }
+
+    override fun updateThreadContext(context: CoroutineContext): Token {
+        token.link()
+        return token
+    }
+
+    companion object {
+        val Key = object : CoroutineContext.Key<NewRelicContextElement> {}
+    }
+}
+
+class NewRelicTokenContext(
+    val token: Token
+) : CoroutineContext.Element {
+    override val key = Key
+
+    companion object Key : CoroutineContext.Key<NewRelicTokenContext>
 }

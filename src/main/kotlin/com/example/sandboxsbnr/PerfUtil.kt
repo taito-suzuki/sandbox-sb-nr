@@ -2,62 +2,40 @@ package com.example.sandboxsbnr
 
 import com.newrelic.api.agent.NewRelic
 import com.newrelic.api.agent.Segment
+import com.newrelic.api.agent.Trace
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
-import kotlin.coroutines.CoroutineContext
-import kotlin.coroutines.EmptyCoroutineContext
 
-class DefferedW<T>(
-    private val v: Deferred<T>,
-    private val segment: Segment,
-) {
-    private var completed: Boolean = false
-    suspend fun await(): T {
-        val r = v.await()
-        if (!completed) {
-            segment.end()
-            completed = true
-        }
-        return r
-    }
-}
-
-class DeferredWW<T>(
-    private val v: Deferred<T>,
-    private val segment: Segment,
-) : Deferred<T> by v {
-    private var completed = false
-    override suspend fun await(): T {
-        println("await!")
-        val returned = this.await()
-        if (!completed) {
-            segment.end()
-            completed = true
-        }
-        return returned
-    }
-}
-
+@Trace(async = true)
 fun <T> CoroutineScope.asyncw(
-    context: CoroutineContext = EmptyCoroutineContext,
-    start: CoroutineStart = CoroutineStart.DEFAULT,
     block: suspend CoroutineScope.() -> T,
 ): Deferred<T> {
-    val stackTraces = Throwable().stackTrace.filterIndexed { i, _ ->
-        i >= 2
+    this.coroutineContext[NewRelicTokenContext]?.token?.link()
+    val parts = block.javaClass.typeName.split("$")
+    val classFullName = parts[0]
+    val className = classFullName.split(".").last()
+    val methodName = if (parts.size > 1) {
+        parts[1]
+    } else {
+        ""
     }
-    val stackTrace = stackTraces.first()
-    val segment = NewRelic.getAgent().transaction.startSegment(stackTrace.toString())
+    val stackTrace = Throwable().stackTrace[1]
+    val segmentName2 = "${className}.${methodName}(${stackTrace.fileName}:${stackTrace.lineNumber})"
+    val transaction = NewRelic.getAgent().transaction
+    transaction.tracedMethod.setMetricName("nr_async", segmentName2)
+    val segment = transaction.startSegment("(${stackTrace.fileName}:${stackTrace.lineNumber})")
     val v = async(
-        context = context,
-        start = start,
+        context = this.coroutineContext,
         block = block,
     )
     v.invokeOnCompletion {
-        println("aaaaaaa")
         segment.end()
     }
     return v
+}
+
+fun nrSegment(): Segment {
+    val stackTrace = Throwable().stackTrace[1]
+    return NewRelic.getAgent().transaction.startSegment("nr_segment", "${stackTrace.fileName}:${stackTrace.lineNumber}")
 }
